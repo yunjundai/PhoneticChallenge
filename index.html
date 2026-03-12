@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI 注音大對決</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #f0f9ff;
+            background-image: radial-gradient(#bfdbfe 1px, transparent 1px);
+            background-size: 20px 20px;
+            touch-action: manipulation;
+            user-select: none;
+            overflow: hidden; /* 防止整體頁面捲動 */
+        }
+        .card-shadow {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .game-btn {
+            transition: all 0.1s;
+        }
+        .game-btn:active {
+            transform: scale(0.95);
+        }
+        @keyframes pop {
+            0% { transform: scale(0.8); opacity: 0; }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-pop {
+            animation: pop 0.2s ease-out forwards;
+        }
+        /* Combo 動畫 */
+        @keyframes combo-pop {
+            0% { transform: scale(0.5) rotate(10deg); opacity: 0; }
+            30% { transform: scale(1.2) rotate(10deg); opacity: 1; }
+            70% { transform: scale(1) rotate(10deg); opacity: 1; }
+            100% { transform: scale(0.8) rotate(10deg); opacity: 0; }
+        }
+        .animate-combo {
+            animation: combo-pop 0.6s ease-out forwards;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        .animate-shake {
+            animation: shake 0.3s ease-in-out;
+        }
+        .text-outline {
+            text-shadow: 
+                2px 2px 0 #000,
+                -1px -1px 0 #000,  
+                1px -1px 0 #000,
+                -1px 1px 0 #000,
+                1px 1px 0 #000;
+        }
+        /* 排行榜表格樣式 */
+        .rank-row:nth-child(1) .rank-num { color: #eab308; } 
+        .rank-row:nth-child(2) .rank-num { color: #94a3b8; } 
+        .rank-row:nth-child(3) .rank-num { color: #b45309; }
+        
+        /* 貼紙樣式 */
+        .sticker-slot {
+            transition: transform 0.2s;
+        }
+        .sticker-slot:hover {
+            transform: scale(1.1) rotate(5deg);
+        }
+        .sticker-new-badge {
+            animation: bounce 1s infinite;
+        }
+        
+        /* 彩帶特效 Canvas */
+        #confetti-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 9999;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-2 sm:p-4">
+
+    <!-- Confetti Canvas -->
+    <canvas id="confetti-canvas"></canvas>
+
+    <div class="w-full max-w-md bg-white rounded-2xl sm:rounded-3xl card-shadow overflow-hidden border-4 border-blue-200 relative h-[90vh] sm:h-auto sm:min-h-[500px] flex flex-col">
+        
+        <!-- Header: 更緊湊 -->
+        <div class="bg-blue-600 p-3 text-center relative overflow-hidden shrink-0">
+            <div class="absolute top-0 left-0 w-full h-full opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
+            <h1 class="text-xl sm:text-2xl font-bold text-white tracking-wider relative z-10">AI 注音大對決</h1>
+            <p id="headerSubtitle" class="text-blue-100 text-[10px] sm:text-xs mt-0.5 relative z-10">全方位發音挑戰</p>
+        </div>
+
+        <div class="p-3 sm:p-5 flex-grow flex flex-col items-center justify-between relative overflow-hidden">
+            
+            <!-- Status Bar -->
+            <div class="flex justify-between w-full mb-2 font-bold text-gray-600 text-xs sm:text-sm relative z-10 shrink-0">
+                <div class="flex items-center gap-2">
+                    <span class="bg-yellow-100 px-2 sm:px-3 py-1 rounded-full text-yellow-700 border border-yellow-200 shadow-sm">🏆 <span id="scoreLabel">分數</span>: <span id="scoreDisplay">0</span></span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="bg-blue-100 px-2 sm:px-3 py-1 rounded-full text-blue-700 border border-blue-200 shadow-sm">⏳ <span id="timeLabel">時間</span>: <span id="timerDisplay">60</span></span>
+                </div>
+            </div>
+
+            <!-- Combo Effect Overlay -->
+            <div id="comboContainer" class="absolute top-16 right-2 pointer-events-none z-50 hidden">
+                <div class="text-center transform rotate-[10deg]">
+                    <div class="text-xl sm:text-2xl font-black text-yellow-400 text-outline italic tracking-tighter">COMBO</div>
+                    <div class="text-4xl sm:text-5xl font-black text-white text-outline drop-shadow-xl" id="comboCountDisplay">x2</div>
+                </div>
+            </div>
+
+            <!-- Sticker Album Screen (Overlay) -->
+            <div id="stickerScreen" class="absolute inset-0 bg-white z-50 flex flex-col items-center p-4 hidden">
+                <div class="w-full flex justify-between items-center mb-2 shrink-0">
+                    <h2 class="text-lg font-bold text-gray-800">📒 我的貼紙簿</h2>
+                    <button onclick="closeStickerAlbum()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+                </div>
+                <p class="text-xs text-gray-500 mb-2 shrink-0">蒐集進度: <span id="stickerProgress" class="font-bold text-blue-600">0/20</span></p>
+                
+                <div class="bg-yellow-50 w-full flex-grow overflow-y-auto rounded-xl border-2 border-yellow-200 p-3 no-scrollbar">
+                    <div id="stickerGrid" class="grid grid-cols-4 gap-2">
+                        <!-- JS will populate -->
+                    </div>
+                </div>
+
+                <div class="mt-3 w-full shrink-0">
+                    <button onclick="closeStickerAlbum()" class="w-full game-btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 sm:py-3 rounded-xl shadow-md">
+                        關閉
+                    </button>
+                </div>
+            </div>
+
+            <!-- Leaderboard Screen (Overlay) -->
+            <div id="leaderboardScreen" class="absolute inset-0 bg-white z-40 flex flex-col items-center p-4 hidden">
+                <div class="w-full flex justify-between items-center mb-2 shrink-0">
+                    <h2 class="text-lg font-bold text-gray-800">🏆 榮譽排行榜</h2>
+                    <button onclick="closeLeaderboard()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+                </div>
+                <div class="bg-blue-50 w-full p-2 rounded-lg text-center text-blue-800 font-bold mb-2 text-sm shrink-0" id="lbCategoryTitle">
+                    -
+                </div>
+                
+                <div class="w-full flex-grow overflow-y-auto no-scrollbar">
+                    <table class="w-full text-left">
+                        <thead>
+                            <tr class="text-gray-400 text-xs border-b border-gray-200">
+                                <th class="pb-1 pl-2">名次</th>
+                                <th class="pb-1">名字</th>
+                                <th class="pb-1 text-right pr-2">分數</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaderboardList" class="text-sm">
+                            <!-- JS will populate this -->
+                        </tbody>
+                    </table>
+                    <div id="noDataMsg" class="text-center text-gray-400 mt-8 text-sm hidden">
+                        尚未有紀錄，快來挑戰！
+                    </div>
+                </div>
+
+                <div class="mt-3 w-full shrink-0">
+                    <button onclick="closeLeaderboard()" class="w-full game-btn bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 sm:py-3 rounded-xl">
+                        返回
+                    </button>
+                </div>
+            </div>
+
+            <!-- Category Selection Screen (Initial) -->
+            <div id="categoryScreen" class="absolute inset-0 bg-white z-30 flex flex-col items-center justify-start p-4 text-center">
+                <h2 class="text-lg sm:text-xl font-bold text-gray-800 mb-1">請選擇挑戰關卡</h2>
+                <p class="text-gray-500 mb-3 text-xs">針對弱點，各個擊破！</p>
+                
+                <!-- 改為 Grid 2x2 排版，節省空間 -->
+                <div class="grid grid-cols-2 gap-2 sm:gap-3 w-full mb-3 flex-grow overflow-y-auto no-scrollbar content-start">
+                    <!-- 1. ㄓ/ㄗ -->
+                    <button onclick="selectCategory('z_zh')" class="game-btn bg-white border-2 border-green-100 hover:border-green-400 hover:bg-green-50 p-2 sm:p-3 rounded-xl flex flex-col items-center justify-center shadow-sm group h-24 sm:h-28">
+                        <div class="text-2xl sm:text-3xl mb-1">🕷️</div>
+                        <div class="text-lg sm:text-xl font-black text-green-600 group-hover:text-green-700">ㄓ vs ㄗ</div>
+                        <div class="text-[10px] text-gray-400">蜘蛛 / 祖先</div>
+                    </button>
+
+                    <!-- 2. ㄔ/ㄘ -->
+                    <button onclick="selectCategory('c_ch')" class="game-btn bg-white border-2 border-blue-100 hover:border-blue-400 hover:bg-blue-50 p-2 sm:p-3 rounded-xl flex flex-col items-center justify-center shadow-sm group h-24 sm:h-28">
+                        <div class="text-2xl sm:text-3xl mb-1">✊</div>
+                        <div class="text-lg sm:text-xl font-black text-blue-600 group-hover:text-blue-700">ㄔ vs ㄘ</div>
+                        <div class="text-[10px] text-gray-400">拆開 / 猜拳</div>
+                    </button>
+                    
+                    <!-- 3. ㄕ/ㄙ -->
+                    <button onclick="selectCategory('s_sh')" class="game-btn bg-white border-2 border-orange-100 hover:border-orange-400 hover:bg-orange-50 p-2 sm:p-3 rounded-xl flex flex-col items-center justify-center shadow-sm group h-24 sm:h-28">
+                        <div class="text-2xl sm:text-3xl mb-1">🚌</div>
+                        <div class="text-lg sm:text-xl font-black text-orange-600 group-hover:text-orange-700">ㄕ vs ㄙ</div>
+                        <div class="text-[10px] text-gray-400">老師 / 司機</div>
+                    </button>
+
+                    <!-- 4. ㄣ/ㄥ -->
+                    <button onclick="selectCategory('en_eng')" class="game-btn bg-white border-2 border-purple-100 hover:border-purple-400 hover:bg-purple-50 p-2 sm:p-3 rounded-xl flex flex-col items-center justify-center shadow-sm group h-24 sm:h-28">
+                        <div class="text-2xl sm:text-3xl mb-1">👃</div>
+                        <div class="text-lg sm:text-xl font-black text-purple-600 group-hover:text-purple-700">ㄣ vs ㄥ</div>
+                        <div class="text-[10px] text-gray-400">真心 / 真正</div>
+                    </button>
+                </div>
+                
+                <button onclick="openStickerAlbum()" class="w-full py-2 sm:py-3 bg-yellow-100 text-yellow-700 border-2 border-yellow-300 rounded-xl text-sm font-bold hover:bg-yellow-200 hover:scale-[1.02] transition-transform shadow-sm flex items-center justify-center gap-2 shrink-0">
+                    📒 我的貼紙簿 <span class="bg-red-500 text-white text-[10px] px-2 rounded-full hidden" id="newStickerBadge">NEW</span>
+                </button>
+            </div>
+
+            <!-- Start Screen (Ready) -->
+            <div id="startScreen" class="hidden absolute inset-0 bg-white z-20 flex flex-col items-center justify-center p-4 text-center">
+                <div class="text-6xl sm:text-7xl mb-4 animate-bounce" id="categoryEmoji">🔥</div>
+                <h2 id="readyTitle" class="text-xl sm:text-2xl font-bold text-gray-800 mb-1">準備好了嗎？</h2>
+                <p class="text-gray-500 mb-4 text-xs sm:text-sm">注意看題目中的「」標示</p>
+                
+                <input type="text" id="studentNameInput" placeholder="請輸入你的姓名或座號" class="w-full max-w-xs p-2 border-2 border-blue-300 rounded-xl text-center text-sm sm:text-base mb-4 focus:outline-none focus:border-blue-500">
+                
+                <div class="grid grid-cols-2 gap-3 mb-4 w-full max-w-xs text-left text-xs sm:text-sm bg-gray-50 p-3 rounded-xl">
+                    <div>
+                        <span id="demoChar1" class="text-pink-500 font-bold text-base">-</span> <span id="demoDesc1" class="text-gray-400">-</span><br>
+                    </div>
+                    <div>
+                        <span id="demoChar2" class="text-purple-500 font-bold text-base">-</span> <span id="demoDesc2" class="text-gray-400">-</span><br>
+                    </div>
+                </div>
+
+                <div class="flex gap-2 w-full max-w-xs mb-4">
+                    <button onclick="openLeaderboard()" class="flex-1 py-2 bg-yellow-50 border border-yellow-200 text-yellow-700 rounded-lg text-xs sm:text-sm font-bold hover:bg-yellow-100">
+                        🏆 排行榜
+                    </button>
+                </div>
+
+                <button onclick="startGame()" class="game-btn bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-lg sm:text-xl font-bold py-3 sm:py-4 px-10 rounded-full shadow-lg transform transition hover:-translate-y-1 w-full max-w-xs">
+                    開始挑戰
+                </button>
+                <button onclick="showCategorySelection()" class="mt-3 text-gray-400 text-xs sm:text-sm hover:text-gray-600 underline">
+                    回上一頁
+                </button>
+            </div>
+
+            <!-- End Screen -->
+            <div id="endScreen" class="hidden absolute inset-0 bg-white/98 z-30 flex flex-col items-center justify-center p-4 text-center backdrop-blur-md overflow-y-auto">
+                
+                <!-- Normal End View -->
+                <div id="normalEndView" class="w-full flex flex-col items-center">
+                    <div id="rankBadge" class="text-xs bg-gray-200 text-gray-600 px-3 py-1 rounded-full mb-2 font-bold">注音練習生</div>
+                    <div id="endEmoji" class="text-5xl sm:text-6xl mb-2 animate-bounce">🎉</div>
+                    <h2 id="endTitle" class="text-2xl sm:text-3xl font-bold text-gray-800 mb-2">時間到！</h2>
+                    
+                    <div class="flex items-center gap-4 mb-3">
+                        <div class="text-center">
+                             <div class="text-[10px] text-gray-400">分數</div>
+                             <div id="finalScore" class="text-3xl sm:text-4xl font-black text-blue-600 tracking-tighter">0</div>
+                        </div>
+                        <div class="w-px h-8 bg-gray-300"></div>
+                        <div class="text-center">
+                             <div class="text-[10px] text-gray-400">最大連擊</div>
+                             <div id="maxComboValueEnd" class="text-3xl sm:text-4xl font-black text-yellow-500 tracking-tighter">0</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Reward Section (Gacha) -->
+                    <div id="gachaSection" class="w-full max-w-xs bg-yellow-50 border-2 border-yellow-200 rounded-xl p-2 mb-3 hidden">
+                         <div id="gachaClosed" class="flex flex-col items-center">
+                             <p class="text-xs text-yellow-800 font-bold mb-1">🎁 你獲得一次抽獎機會！</p>
+                             <button onclick="playGacha()" class="game-btn bg-yellow-400 hover:bg-yellow-500 text-white text-sm font-bold py-1.5 px-4 rounded-full shadow-md animate-pulse">
+                                 點我抽貼紙
+                             </button>
+                         </div>
+                         <div id="gachaOpen" class="flex flex-col items-center hidden">
+                             <p class="text-[10px] text-gray-500 mb-0">恭喜獲得！</p>
+                             <div id="newStickerDisplay" class="text-5xl mb-0 animate-pop drop-shadow-md"></div>
+                             <p id="newStickerName" class="font-bold text-yellow-700 text-xs">神秘貼紙</p>
+                         </div>
+                    </div>
+
+                    <div id="feedbackMessage" class="bg-blue-50 p-2 sm:p-3 rounded-xl text-xs sm:text-sm text-blue-800 mb-3 w-full text-left border border-blue-100">
+                        <!-- Feedback -->
+                    </div>
+
+                    <!-- 錯題挑戰按鈕 -->
+                    <button id="btnMistakeChallenge" onclick="startMistakeChallenge()" class="hidden w-full max-w-xs mb-2 game-btn bg-red-500 hover:bg-red-600 text-white text-base font-bold py-2 px-8 rounded-full shadow-md animate-pulse">
+                        🔥 挑戰錯題 (<span id="mistakeCount">0</span>)
+                    </button>
+
+                    <div class="flex gap-2 w-full max-w-xs mt-1">
+                        <button onclick="showCategorySelection()" class="flex-1 game-btn bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm sm:text-base font-bold py-2 sm:py-3 rounded-full shadow-md">
+                            回首頁
+                        </button>
+                        <button onclick="startGame()" class="flex-1 game-btn bg-green-500 hover:bg-green-600 text-white text-sm sm:text-base font-bold py-2 sm:py-3 rounded-full shadow-md">
+                            再玩一次
+                        </button>
+                    </div>
+                </div>
+
+                <!-- High Score Input View (Initially hidden) -->
+                <div id="highScoreView" class="hidden w-full flex flex-col items-center animate-pop">
+                    <div class="text-5xl sm:text-6xl mb-3">👑</div>
+                    <h2 class="text-xl sm:text-2xl font-bold text-yellow-600 mb-1">打破紀錄！</h2>
+                    <p class="text-gray-600 mb-3 text-xs sm:text-sm">太厲害了！你進入了前 5 名！</p>
+                    <div class="text-4xl sm:text-5xl font-black text-blue-600 mb-4" id="highScoreValue">0</div>
+                    
+                    <input type="text" id="playerNameInput" placeholder="請輸入你的名字" maxlength="8" class="w-full max-w-xs p-2 border-2 border-blue-300 rounded-xl text-center text-base mb-3 focus:outline-none focus:border-blue-500">
+                    
+                    <button onclick="submitHighScore()" class="w-full max-w-xs game-btn bg-blue-600 hover:bg-blue-700 text-white text-base font-bold py-2 sm:py-3 rounded-full shadow-md">
+                        登錄排行榜
+                    </button>
+                </div>
+
+            </div>
+
+            <!-- Game Area: 減少高度，讓手機版更舒適 -->
+            <div class="flex flex-col items-center justify-center flex-grow w-full py-1 sm:py-2 relative z-10">
+                <div id="questionCard" class="bg-gradient-to-br from-gray-50 to-white border-2 border-gray-100 rounded-2xl sm:rounded-3xl p-4 w-full text-center shadow-sm relative overflow-hidden flex items-center justify-center h-32 sm:h-40">
+                    <div class="text-[10px] text-gray-300 absolute top-2 right-3 font-mono"><span id="qCountLabel">Q.</span><span id="qCount">0</span></div>
+                    <div id="questionText" class="text-3xl sm:text-4xl font-black text-gray-800 tracking-wider break-words leading-tight">準備</div>
+                </div>
+                <div id="resultFeedback" class="h-5 sm:h-6 mt-2 font-bold text-base sm:text-lg transition-opacity opacity-0">...</div>
+            </div>
+
+            <!-- Buttons -->
+            <div class="grid grid-cols-2 gap-3 w-full mt-1 sm:mt-2 relative z-10 shrink-0">
+                <button id="btnOption1" onclick="checkAnswer(currentCategoryConfig.list1Key)" class="game-btn group bg-white border-2 border-pink-100 hover:border-pink-300 hover:bg-pink-50 text-pink-600 rounded-xl sm:rounded-2xl p-3 sm:p-4 flex flex-col items-center shadow-sm relative overflow-hidden">
+                    <div class="absolute inset-0 bg-pink-100 opacity-0 group-hover:opacity-20 transition-opacity"></div>
+                    <span id="btnText1" class="text-3xl sm:text-4xl font-black mb-0.5 sm:mb-1">-</span>
+                    <span id="btnDesc1" class="text-[10px] sm:text-xs font-bold opacity-70">-</span>
+                </button>
+                <button id="btnOption2" onclick="checkAnswer(currentCategoryConfig.list2Key)" class="game-btn group bg-white border-2 border-purple-100 hover:border-purple-300 hover:bg-purple-50 text-purple-600 rounded-xl sm:rounded-2xl p-3 sm:p-4 flex flex-col items-center shadow-sm relative overflow-hidden">
+                    <div class="absolute inset-0 bg-purple-100 opacity-0 group-hover:opacity-20 transition-opacity"></div>
+                    <span id="btnText2" class="text-3xl sm:text-4xl font-black mb-0.5 sm:mb-1">-</span>
+                    <span id="btnDesc2" class="text-[10px] sm:text-xs font-bold opacity-70">-</span>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Footer / Copyright Info -->
+        <div class="bg-gray-50 p-2 text-center text-[10px] text-gray-500 leading-tight border-t border-gray-100 shrink-0">
+            <div class="my-0.5 scale-90 origin-center">©️ 請尊重著作權，延伸改做請徵詢同意，並於發布時標註原作者。</div>
+            <div class="mb-1 text-red-500 font-bold scale-90 origin-center">🚫 不得商用。</div>
+        </div>
+    </div>
+
+    <script>
+        /* -------------------------------------------------------------------------- */
+        /* Data Sets                                  */
+        /* -------------------------------------------------------------------------- */
+
+        // 1. ㄘ (c) vs ㄔ (ch)
+        const words_c = [
+            "「猜」拳", "「擦」拭", "「菜」市場", "「草」原", "「餐」廳", "「廁」所", "「參」加", "「慚」愧", "悲「慘」", "「燦」爛",
+            "「倉」庫", "躲「藏」", "「操」場", "「粗」糙", "「策」略", "手「冊」", "「測」驗", "「側」面", "樓「層」", "「曾」經",
+            "「促」進", "吃「醋」", "「粗」心", "花「簇」", "「翠」綠", "「脆」弱", "「催」眠", "「摧」毀", "「存」在", "「尺」寸",
+            "「村」莊", "「錯」誤", "「挫」折", "「搓」揉", "「蹉」跎", "「辭」職", "「慈」悲", "陶「瓷」", "歌「詞」", "「此」時",
+            "「次」數", "「刺」激", "恩「賜」", "洋「蔥」", "「聰」明", "「匆」忙", "隨「從」", "「草」叢", "「殘」障", "「蠶」寶寶",
+            "色「彩」", "「蒼」蠅", "「倉」鼠", "收「藏」", "體「操」", "「曹」操", "「糙」米", "「冊」封", "預「測」", "「側」躺",
+            "一「層」", "磨「蹭」", "「促」銷", "「醋」罈", "「粗」魯", "「簇」擁", "翡「翠」", "乾「脆」", "「催」繳", "「摧」殘",
+            "「存」錢", "一「寸」", "「村」長", "「錯」字", "越「挫」越勇", "「搓」湯圓", "「辭」典", "「慈」母", "「磁」鐵", "「詞」彙",
+            "彼「此」", "名「次」", "「刺」蝟", "「賜」教", "「蔥」油餅", "失「聰」", "「匆」促", "服「從」", "「叢」林", "「殘」留",
+            "「慚」色", "「蒼」老", "船「艙」", "隱「藏」", "「操」作", "「嘈」雜", "偵「測」", "「側」身", "雲「層」", "「曾」祖父",
+            "「參」觀", "「殘」忍", "「燦」笑", "「草」莓", "「菜」單", "「擦」窗戶", "「猜」謎", "「猜」測", "「猜」想", "「插」嘴" 
+        ];
+        const words_ch = [
+            "「拆」開", "「插」座", "「茶」葉", "檢「查」", "警「察」", "「叉」燒", "「差」別", "「抄」襲", "「炒」菜", "「超」人",
+            "「吵」鬧", "「車」子", "「徹」底", "「撤」銷", "「陳」舊", "早「晨」", "「沉」沒", "「襯」衫", "「趁」早", "名「稱」",
+            "支「撐」", "「城」堡", "「成」功", "「誠」懇", "「承」認", "「吃」飯", "「遲」到", "「池」塘", "賓「士」", "羞「恥」",
+            "「赤」道", "「翅」膀", "「出」發", "「初」中", "「除」夕", "清「楚」", "「處」理", "「觸」摸", "河「川」", "「穿」鞋",
+            "「船」隻", "「傳」染", "「喘」息", "「串」燒", "「窗」簾", "起「床」", "「創」造", "「吹」風機", "「垂」頭", "「炊」煙",
+            "「春」捲", "「純」真", "「唇」膏", "愚「蠢」", "「衝」浪", "「充」電", "「蟲」子", "「重」點", "「寵」愛", "「愁」眉",
+            "「籌」備", "「醜」陋", "「抽」出", "「躊」躇", "「處」罰", "「廚」房", "「櫥」櫃", "「鋤」頭", "「儲」存", "「楚」國",
+            "「處」女座", "「觸」電", "「傳」單", "「傳」奇", "「船」票", "「喘」氣", "「串」門子", "「窗」戶", "「闖」紅燈", "「創」傷",
+            "「吹」牛", "「垂」直", "鐵「鎚」", "「春」聯", "「純」粹", "嘴「唇」", "「蠢」事", "「衝」動", "「充」分", "螢火「蟲」",
+            "「重」複", "「寵」壞", "「仇」恨", "「籌」碼", "小「丑」", "「抽」屜", "「惆」悵", "「廚」師", "「儲」蓄", "「插」花",
+            "「拆」除", "「拆」信", "「拆」夥", "「炒」飯", "「唱」歌", "「超」級", "「長」度", "「常」識", "「場」地", "「嘗」試"
+        ];
+
+        // 2. ㄗ (z) vs ㄓ (zh)
+        const words_z = [
+            "「資」源", "「姿」勢", "「滋」味", "「仔」細", "「紫」色", "「子」彈", "「字」典", "「自」己", "「租」屋", "「祖」先", 
+            "「阻」擋", "「組」織", "「足」夠", "「族」群", "「鑽」石", "「尊」重", "「遵」守", "「最」後", "「嘴」巴", "「醉」酒", 
+            "「罪」惡", "「昨」天", "「左」邊", "「作」業", "「坐」下", "「座」位", "「做」事", "「早」上", "「澡」盆", "「棗」子", 
+            "「造」成", "「燥」熱", "「躁」鬱", "「髒」亂", "「葬」禮", "「增」加", "「曾」孫", "「贈」送", "「宗」教", "「蹤」跡", 
+            "「總」共", "「縱」容", "「走」路", "「奏」樂", "「租」金", "「足」球", "「族」人", "「阻」塞", "「組」合", "「祖」父", 
+            "「鑽」研", "「嘴」唇", "「最」佳", "「罪」犯", "「遵」循", "「尊」敬", "「昨」晚", "「左」手", "「作」品", "「坐」墊", 
+            "「座」號", "「做」工", "「早」餐", "「澡」堂", "「造」句", "「燥」花", "「髒」話", "「增」強", "「贈」品", "「宗」旨", 
+            "「綜」合", "「總」統", "「縱」火", "「走」廊", "「奏」效", "「在」乎", "「再」見", "「載」貨", "「栽」培", "「災」難", 
+            "「宰」殺", "「仔」肩", "「姊」姊", "「紫」菜", "「子」女", "「字」體", "「自」由", "「漬」物", "「諮」詢", "「姿」態", 
+            "「滋」養", "「資」料", "「自」信", "「字」幕", "「子」孫", "「紫」水晶", "「雜」誌", "「咱」們", "「髒」兮兮", "「造」型"
+        ];
+        const words_zh = [
+            "「知」道", "「蜘」蛛", "「支」票", "「指」甲", "「只」是", "「直」接", "「紙」張", "「至」少", "「制」度", "「治」療", 
+            "「智」慧", "「職」業", "「質」量", "「中」間", "「忠」心", "「終」點", "「鐘」錶", "「種」子", "「重」要", "「周」圍", 
+            "「粥」", "「州」長", "「舟」山", "「豬」肉", "「珠」寶", "「主」要", "「煮」飯", "「住」宿", "「祝」福", "「助」理", 
+            "「注」意", "「抓」住", "「爪」子", "「專」家", "「磚」塊", "「轉」彎", "「賺」錢", "「裝」飾", "「莊」嚴", "「撞」見", 
+            "「追」求", "「準」備", "「桌」子", "「捉」迷藏", "「濁」水", "「拙」劣", "記「者」", "「哲」學", "「摺」紙", "「這」裡", 
+            "「蔗」糖", "「遮」陽", "「折」扣", "「珍」珠", "「真」心", "「針」對", "「偵」探", "「枕」頭", "「陣」雨", "「震」動", 
+            "「鎮」定", "「爭」吵", "「征」服", "「整」齊", "「正」確", "「證」明", "「政」府", "「鄭」重", "「之」前", "「植」物", 
+            "「執」行", "「值」得", "「姪」子", "「職」員", "「止」血", "「趾」甲", "「旨」意", "「指」導", "「至」今", "「志」願", 
+            "「製」造", "「秩」序", "「稚」氣", "「置」物", "「支」持", "「枝」葉", "「脂」肪", "「芝」麻", "「知」識", "「織」布", 
+            "「直」升機", "「值」日生", "「殖」民", "地「址」", "福「祉」", "「指」揮", "「至」寶", "「致」敬", "「智」力", "「滯」留"
+        ];
+
+        // 3. ㄙ (s) vs ㄕ (sh)
+        const words_s = [
+            "「司」機", "「絲」瓜", "「私」人", "「思」想", "「斯」文", "「死」亡", "「四」季", "「寺」廟", "「似」乎", "「伺」服", 
+            "「蘇」打", "「酥」脆", "「俗」氣", "「素」食", "「速」度", "「訴」說", "「塑」膠", "「酸」味", "「蒜」頭", "「算」數", 
+            "「歲」月", "「碎」片", "「隨」便", "稻「穗」", "「孫」子", "「損」失", "「筍」子", "「縮」小", "「鎖」頭", "「所」以", 
+            "「索」取", "「沙」發", "「殺」手", "「紗」布", "「傻」瓜", "「撒」嬌", "「灑」水", "「色」彩", "苦「澀」", "「森」林", 
+            "「僧」侶", "「三」個", "「散」步", "雨「傘」", "「桑」樹", "「嗓」子", "「喪」禮", "「掃」地", "「嫂」嫂", "「騷」擾", 
+            "「搜」尋", "咳「嗽」", "「司」法", "「絲」毫", "「私」心", "「思」考", "「死」心", "「四」肢", "「似」曾", "「伺」機", 
+            "「蘇」醒", "「俗」語", "「宿」舍", "「素」質", "「速」食", "「訴」苦", "「塑」造", "「酸」菜", "「蒜」泥", "「算」盤", 
+            "「歲」末", "「碎」裂", "「隧」道", "「雖」然", "「隨」手", "「孫」女", "「損」壞", "「筍」乾", "「縮」水", "「鎖」匙", 
+            "「所」有", "「索」賠", "「沙」灘", "「殺」菌", "「紗」窗", "「傻」笑", "「撒」謊", "「灑」落", "「色」澤", "吝「嗇」", 
+            "「森」嚴", "「僧」人", "「三」角", "「散」心", "「鬆」餅", "「聳」肩", "「送」禮", "「誦」讀", "「宋」朝", "「松」鼠"
+        ];
+        const words_sh = [
+            "老「師」", "「獅」子", "「詩」人", "「施」工", "「溼」度", "「十」分", "「時」間", "「食」物", "「實」在", "「石」頭", 
+            "「使」用", "「史」上", "「始」終", "「世」界", "「事」情", "「試」驗", "「是」非", "「室」內", "「市」場", "「式」樣", 
+            "「示」範", "「書」本", "「輸」贏", "「蔬」菜", "「叔」叔", "「舒」服", "「熟」悉", "贖」罪", "「署」光", "「鼠」標", 
+            "「數」字", "「樹」木", "「術」語", "「束」縛", "「刷」牙", "「耍」賴", "「衰」退", "「帥」氣", "「率」領", "「雙」手", 
+            "「霜」降", "「水」果", "「睡」覺", "「稅」金", "「順」利", "「說」話", "「碩」士", "「少」年", "「燒」烤", "「勺」子", 
+            "「舌」頭", "毒「蛇」", "「社」會", "「設」計", "「射」擊", "「身」體", "「深」度", "「神」奇", "「甚」至", "「慎」重", 
+            "「生」活", "「聲」音", "「繩」子", "「省」錢", "「剩」下", "「盛」大", "「聖」誕", "「師」傅", "「施」展", "「溼」氣", 
+            "「失」去", "「十」字", "「拾」起", "「實」際", "「石」油", "「史」地", "「使」者", "「矢」口", "「世」代", "「事」業", 
+            "「視」力", "「誓」言", "「逝」去", "「適」當", "「釋」放", "「飾」品", "「書」包", "「輸」入", "「蔬」果", "「梳」子", 
+            "「疏」忽", "「熟」人", "「暑」假", "「屬」於", "「署」名", "「數」量", "「樹」葉", "「術」科", "「豎」立", "「述」說"
+        ];
+
+        // 4. ㄣ (en/in/un) vs ㄥ (eng/ing/ong)
+        const words_en = [
+            "「真」心", "「針」頭", "「偵」探", "「珍」珠", "「枕」頭", "「診」斷", "「陣」雨", "「震」動", "「鎮」定", "「深」度", 
+            "「身」體", "「神」奇", "「甚」至", "「滲」透", "「沈」默", "「嬸」嬸", "「人」員", "「仁」愛", "「忍」受", "「任」性", 
+            "「認」識", "「本」來", "「笨」拙", "「奔」馳", "「盆」栽", "「噴」漆", "「門」戶", "「悶」熱", "我「們」", "「分」配", 
+            "「紛」擾", "「粉」紅", "「份」內", "「憤」慨", "「奮」力", "「根」據", "「跟」蹤", "「痕」跡", "「很」久", "「恨」不得", 
+            "「肯」定", "「懇」談", "「墾」荒", "「恩」人", "「怎」樣", "「心」意", "「新」聞", "「辛」苦", "「信」任", "「欣」喜", 
+            "「薪」資", "「金」牌", "「今」日", "「僅」有", "「進」度", "「禁」止", "「緊」急", "「儘」管", "「近」況", "「親」友", 
+            "「侵」害", "「勤」快", "「寢」具", "「林」木", "「淋」濕", "「鄰」居", "「吝」嗇", "「民」俗", "「敏」銳", "「拼」圖", 
+            "「貧」血", "「品」質", "「頻」繁", "「飲」水", "「引」發", "「隱」藏", "「印」刷", "「因」素", "「陰」暗", "「音」響", 
+            "「銀」色", "「昏」迷", "「婚」紗", "「溫」柔", "「蚊」子", "「文」具", "「聞」名", "「穩」固", "「問」候", "「輪」胎", 
+            "「論」文", "「吞」嚥", "「屯」積", "「春」天", "「唇」蜜", "「純」棉", "「蠢」蛋", "「順」序", "「孫」女", "「損」害"
+        ];
+        const words_eng = [
+            "「正」常", "「爭」氣", "「蒸」發", "「整」理", "「證」件", "「政」策", "「掙」扎", "「睜」眼", "「生」活", "「聲」明", 
+            "「升」學", "「繩」索", "「省」錢", "「勝」利", "「剩」菜", "「盛」開", "「聖」地", "「更」改", "「耕」作", "「耿」直", 
+            "「朋」友", "「棚」架", "「澎」湃", "「膨」脹", "「捧」花", "「碰」撞", "「風」景", "「封」閉", "「瘋」狂", "「豐」富", 
+            "「峰」頂", "「縫」隙", "「鳳」梨", "「奉」獻", "「夢」想", "「猛」烈", "「萌」芽", "「盟」友", "「盟」騙", "「蒙」古", 
+            "「冷」漠", "「能」源", "「等」待", "「燈」光", "「登」山", "「增」加", "「贈」品", "「曾」祖", "「層」次", "「蹭」飯", 
+            "「英」雄", "「應」該", "「硬」體", "「迎」新", "「影」片", "「嬰」兒", "「櫻」花", "「鷹」", "「鸚」鵡", "「螢」幕", 
+            "「營」養", "「贏」得", "「興」奮", "「姓」氏", "「星」球", "「醒」悟", "「杏」仁", "「幸」運", "「性」別", "「行」動", 
+            "「形」狀", "「情」緒", "「晴」天", "「清」潔", "「輕」微", "「青」蛙", "「請」客", "「慶」典", "「靜」止", "「敬」禮", 
+            "「競」爭", "「警」戒", "「鏡」頭", "「淨」水", "「精」彩", "「經」驗", "「驚」訝", "「井」水", "「景」點", "「名」單", 
+            "「明」天", "「命」令", "「鳴」叫", "「平」凡", "「評」分", "「蘋」果", "「瓶」裝", "「冰」塊", "「病」毒", "「餅」乾"
+        ];
+
+        /* -------------------------------------------------------------------------- */
+        /* Game Logic                                  */
+        /* -------------------------------------------------------------------------- */
+
+        const categories = {
+            'c_ch': { name: 'ㄘ vs ㄔ', emoji: '✊', btn1: { label: 'ㄘ', desc: '平舌音' }, btn2: { label: 'ㄔ', desc: '捲舌音' }, list1: words_c, list2: words_ch, list1Key: 'k1', list2Key: 'k2' },
+            'z_zh': { name: 'ㄗ vs ㄓ', emoji: '🕷️', btn1: { label: 'ㄗ', desc: '平舌音' }, btn2: { label: 'ㄓ', desc: '捲舌音' }, list1: words_z, list2: words_zh, list1Key: 'k1', list2Key: 'k2' },
+            's_sh': { name: 'ㄙ vs ㄕ', emoji: '🚌', btn1: { label: 'ㄙ', desc: '平舌音' }, btn2: { label: 'ㄕ', desc: '捲舌音' }, list1: words_s, list2: words_sh, list1Key: 'k1', list2Key: 'k2' },
+            'en_eng': { name: 'ㄣ vs ㄥ', emoji: '👃', btn1: { label: 'ㄣ', desc: '前鼻音' }, btn2: { label: 'ㄥ', desc: '後鼻音' }, list1: words_en, list2: words_eng, list1Key: 'k1', list2Key: 'k2' }
+        };
+        
+        // Sticker Database
+        const STICKER_DB = [
+            { id: 1, char: "🐱", name: "普通貓貓", rare: "普通" },
+            { id: 2, char: "🐶", name: "汪汪隊", rare: "普通" },
+            { id: 3, char: "🐰", name: "跳跳兔", rare: "普通" },
+            { id: 4, char: "🐻", name: "大熊熊", rare: "普通" },
+            { id: 5, char: "🐼", name: "胖達", rare: "普通" },
+            { id: 6, char: "🐨", name: "無尾熊", rare: "普通" },
+            { id: 7, char: "🦁", name: "獅子王", rare: "稀有" },
+            { id: 8, char: "🐯", name: "老虎斑", rare: "稀有" },
+            { id: 9, char: "🦄", name: "獨角獸", rare: "傳說" },
+            { id: 10, char: "🐲", name: "神龍", rare: "傳說" },
+            { id: 11, char: "🤖", name: "機器人", rare: "傳說" },
+            { id: 12, char: "👽", name: "外星人", rare: "稀有" },
+            { id: 13, char: "👻", name: "小鬼頭", rare: "普通" },
+            { id: 14, char: "👾", name: "像素怪", rare: "稀有" },
+            { id: 15, char: "💩", name: "黃金便便", rare: "普通" },
+            { id: 16, char: "🌟", name: "幸運星", rare: "稀有" },
+            { id: 17, char: "🍕", name: "披薩", rare: "普通" },
+            { id: 18, char: "🍔", name: "漢堡", rare: "普通" },
+            { id: 19, char: "🍩", name: "甜甜圈", rare: "普通" },
+            { id: 20, char: "🏆", name: "冠軍盃", rare: "傳說" }
+        ];
+
+        let currentCategoryKey = 'c_ch';
+        let currentCategoryConfig = categories['c_ch'];
+        let fullQuestionBank = [];
+        let mistakeBank = [];
+        
+        let currentScore = 0;
+        let currentTime = 60;
+        let timerInterval;
+        let currentQuestionIndex = 0;
+        let isGameActive = false;
+        let answeredCount = 0; 
+        let correctCount = 0; 
+        let isMistakeMode = false;
+        
+        let comboCount = 0;
+        let maxCombo = 0;
+        let currentStudentName = "無名英雄"; // 儲存學生姓名
+
+        // ==========================================
+        // 🛑 Google Sheets 記錄設定區 🛑
+        // 稍後請將您發布的 Google Apps Script 網址貼在下方引號內：
+        const GOOGLE_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxEtw-1zAyMtbDCAemLG6viGK_V1NMzuqUdAapuiZDcsS_7F9l6TtZsRdDwIRFlJHWX/exec"; 
+        // ==========================================
+
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playSound(type) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            const now = audioCtx.currentTime;
+            
+            if (type === 'correct') {
+                let pitch = 600 + (Math.min(comboCount, 10) * 50);
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(pitch, now);
+                oscillator.frequency.exponentialRampToValueAtTime(pitch * 2, now + 0.1);
+                gainNode.gain.setValueAtTime(0.3, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                oscillator.start(now);
+                oscillator.stop(now + 0.1);
+            } else if (type === 'unlock') {
+                // Unlock sound (harp-like)
+                oscillator.type = 'triangle';
+                oscillator.frequency.setValueAtTime(400, now);
+                oscillator.frequency.linearRampToValueAtTime(800, now + 0.5);
+                gainNode.gain.setValueAtTime(0.3, now);
+                gainNode.gain.linearRampToValueAtTime(0, now + 0.5);
+                oscillator.start(now);
+                oscillator.stop(now + 0.5);
+            } else {
+                oscillator.type = 'triangle';
+                oscillator.frequency.setValueAtTime(150, now);
+                oscillator.frequency.linearRampToValueAtTime(100, now + 0.2);
+                gainNode.gain.setValueAtTime(0.3, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+                oscillator.start(now);
+                oscillator.stop(now + 0.2);
+            }
+        }
+
+        /* -------------------------------------------------------------------------- */
+        /* Confetti Logic                                                             */
+        /* -------------------------------------------------------------------------- */
+        const canvas = document.getElementById('confetti-canvas');
+        const ctx = canvas.getContext('2d');
+        let particles = [];
+        let animationId = null;
+        
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function createParticles(x, y, count) {
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 10,
+                    vy: (Math.random() - 1) * 10,
+                    size: Math.random() * 8 + 4,
+                    color: `hsl(${Math.random() * 360}, 100%, 50%)`,
+                    life: 100
+                });
+            }
+        }
+
+        function updateParticles() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear last frame
+            
+            for (let i = 0; i < particles.length; i++) {
+                let p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.2; // gravity
+                p.life--;
+                
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = Math.max(0, p.life / 30); // Fade out near end
+                ctx.fillRect(p.x, p.y, p.size, p.size);
+            }
+            
+            // Clean up dead particles
+            particles = particles.filter(p => p.life > 0);
+            
+            if (particles.length > 0) {
+                animationId = requestAnimationFrame(updateParticles);
+            } else {
+                // IMPORTANT: Final clear to ensure no residue
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+        }
+
+        function triggerConfetti() {
+            // Cancel existing if any, to avoid double loop speedup (though logic handles it)
+            if (animationId) cancelAnimationFrame(animationId);
+            
+            createParticles(canvas.width / 2, canvas.height / 2, 50);
+            updateParticles();
+        }
+
+        /* -------------------------------------------------------------------------- */
+        /* Sticker & Data Logic                                                       */
+        /* -------------------------------------------------------------------------- */
+        
+        const LB_KEY_PREFIX = 'ai_lb_';
+        const STICKER_KEY = 'ai_stickers';
+        const MAX_LB_ENTRIES = 5;
+
+        function getStickers() {
+            const data = localStorage.getItem(STICKER_KEY);
+            return data ? JSON.parse(data) : [];
+        }
+
+        function saveSticker(id) {
+            let list = getStickers();
+            if (!list.includes(id)) {
+                list.push(id);
+                localStorage.setItem(STICKER_KEY, JSON.stringify(list));
+                return true; // is new
+            }
+            return false;
+        }
+        
+        function openStickerAlbum() {
+            const list = getStickers();
+            const grid = document.getElementById('stickerGrid');
+            const progress = document.getElementById('stickerProgress');
+            
+            grid.innerHTML = '';
+            progress.innerText = `${list.length}/${STICKER_DB.length}`;
+            
+            STICKER_DB.forEach(s => {
+                const hasIt = list.includes(s.id);
+                const el = document.createElement('div');
+                el.className = `flex flex-col items-center justify-center p-2 rounded-lg ${hasIt ? 'bg-white border-2 border-yellow-300 sticker-slot' : 'bg-gray-100 border border-gray-200 opacity-50'}`;
+                el.innerHTML = `
+                    <div class="text-3xl mb-1 filter ${hasIt ? '' : 'grayscale blur-[2px]'}">${s.char}</div>
+                    <div class="text-[10px] text-center w-full truncate ${hasIt ? 'text-gray-700 font-bold' : 'text-gray-400'}">${hasIt ? s.name : '???'}</div>
+                `;
+                grid.appendChild(el);
+            });
+            
+            document.getElementById('stickerScreen').classList.remove('hidden');
+            // Hide badge when opened
+            document.getElementById('newStickerBadge').classList.add('hidden');
+        }
+        
+        function closeStickerAlbum() {
+            document.getElementById('stickerScreen').classList.add('hidden');
+        }
+
+        function playGacha() {
+            document.getElementById('gachaClosed').classList.add('hidden');
+            document.getElementById('gachaOpen').classList.remove('hidden');
+            
+            // Simple random gacha
+            const randIndex = Math.floor(Math.random() * STICKER_DB.length);
+            const sticker = STICKER_DB[randIndex];
+            const isNew = saveSticker(sticker.id);
+            
+            const disp = document.getElementById('newStickerDisplay');
+            const name = document.getElementById('newStickerName');
+            
+            disp.innerText = sticker.char;
+            name.innerText = (isNew ? "✨ NEW! " : "") + sticker.name + " (" + sticker.rare + ")";
+            
+            playSound('unlock');
+            triggerConfetti();
+        }
+
+        function getLeaderboard(catKey) {
+            const data = localStorage.getItem(LB_KEY_PREFIX + catKey);
+            return data ? JSON.parse(data) : [];
+        }
+
+        function saveScoreToLB(catKey, name, score) {
+            let lb = getLeaderboard(catKey);
+            lb.push({ name, score, date: new Date().toISOString() });
+            lb.sort((a, b) => b.score - a.score);
+            lb = lb.slice(0, MAX_LB_ENTRIES);
+            localStorage.setItem(LB_KEY_PREFIX + catKey, JSON.stringify(lb));
+        }
+
+        function isHighScore(catKey, score) {
+            if (score <= 0) return false;
+            let lb = getLeaderboard(catKey);
+            if (lb.length < MAX_LB_ENTRIES) return true;
+            return score > lb[lb.length - 1].score;
+        }
+
+        function openLeaderboard() {
+            const lb = getLeaderboard(currentCategoryKey);
+            const listEl = document.getElementById('leaderboardList');
+            const noDataMsg = document.getElementById('noDataMsg');
+            const titleEl = document.getElementById('lbCategoryTitle');
+
+            titleEl.innerText = `${currentCategoryConfig.name} 排行榜`;
+            listEl.innerHTML = '';
+
+            if (lb.length === 0) {
+                noDataMsg.classList.remove('hidden');
+            } else {
+                noDataMsg.classList.add('hidden');
+                lb.forEach((entry, index) => {
+                    const row = document.createElement('tr');
+                    row.className = 'rank-row border-b border-gray-100 last:border-0';
+                    row.innerHTML = `
+                        <td class="py-2 pl-2 font-black rank-num text-lg w-12 text-center">#${index + 1}</td>
+                        <td class="py-2 font-bold text-gray-700">${entry.name}</td>
+                        <td class="py-2 text-right pr-2 font-mono font-bold text-blue-600">${entry.score}</td>
+                    `;
+                    listEl.appendChild(row);
+                });
+            }
+
+            document.getElementById('leaderboardScreen').classList.remove('hidden');
+        }
+
+        function closeLeaderboard() {
+            document.getElementById('leaderboardScreen').classList.add('hidden');
+        }
+
+        function submitHighScore() {
+            const nameInput = document.getElementById('playerNameInput');
+            let name = nameInput.value.trim();
+            if (!name) name = currentStudentName;
+            
+            saveScoreToLB(currentCategoryKey, name, currentScore);
+            
+            document.getElementById('highScoreView').classList.add('hidden');
+            document.getElementById('normalEndView').classList.remove('hidden');
+            openLeaderboard();
+        }
+
+        function sendToGoogleSheets(name, category, score, combo, mode) {
+            if (!GOOGLE_APP_SCRIPT_URL) return; 
+            
+            const data = {
+                name: name,
+                category: category,
+                score: score,
+                maxCombo: combo,
+                mode: mode
+            };
+
+            fetch(GOOGLE_APP_SCRIPT_URL, {
+                method: 'POST',
+                mode: 'no-cors', // 避免 CORS 阻擋問題
+                headers: {
+                    'Content-Type': 'text/plain', 
+                },
+                body: JSON.stringify(data)
+            }).catch(err => console.error('成績發送失敗', err));
+        }
+
+        // --- UI Navigation ---
+
+        function showCategorySelection() {
+            document.getElementById('categoryScreen').classList.remove('hidden');
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('endScreen').classList.add('hidden');
+            document.getElementById('leaderboardScreen').classList.add('hidden');
+            document.getElementById('stickerScreen').classList.add('hidden');
+            document.getElementById('headerSubtitle').innerText = "全方位發音挑戰";
+            isGameActive = false;
+            clearInterval(timerInterval);
+        }
+
+        function selectCategory(key) {
+            currentCategoryKey = key;
+            currentCategoryConfig = categories[key];
+            
+            document.getElementById('btnText1').innerText = currentCategoryConfig.btn1.label;
+            document.getElementById('btnDesc1').innerText = currentCategoryConfig.btn1.desc;
+            document.getElementById('btnText2').innerText = currentCategoryConfig.btn2.label;
+            document.getElementById('btnDesc2').innerText = currentCategoryConfig.btn2.desc;
+            
+            document.getElementById('categoryEmoji').innerText = currentCategoryConfig.emoji;
+            document.getElementById('demoChar1').innerText = currentCategoryConfig.btn1.label;
+            document.getElementById('demoDesc1').innerText = currentCategoryConfig.btn1.desc;
+            document.getElementById('demoChar2').innerText = currentCategoryConfig.btn2.label;
+            document.getElementById('demoDesc2').innerText = currentCategoryConfig.btn2.desc;
+
+            document.getElementById('categoryScreen').classList.add('hidden');
+            document.getElementById('startScreen').classList.remove('hidden');
+            document.getElementById('headerSubtitle').innerText = currentCategoryConfig.name + " 挑戰";
+            
+            const nameInput = document.getElementById('studentNameInput');
+            if (nameInput && currentStudentName !== "無名英雄") {
+                nameInput.value = currentStudentName; // 記住上次輸入的名字
+            }
+            
+            mistakeBank = [];
+        }
+
+        // --- Game Flow ---
+        
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        function initQuestions() {
+            fullQuestionBank = [];
+            currentCategoryConfig.list1.forEach(w => fullQuestionBank.push({ word: w, answer: 'k1', label: currentCategoryConfig.btn1.label }));
+            currentCategoryConfig.list2.forEach(w => fullQuestionBank.push({ word: w, answer: 'k2', label: currentCategoryConfig.btn2.label }));
+            shuffleArray(fullQuestionBank);
+        }
+
+        function startGame(mistakeMode = false) {
+            const nameInput = document.getElementById('studentNameInput');
+            if (nameInput && nameInput.value.trim() !== '') {
+                currentStudentName = nameInput.value.trim();
+            }
+
+            isMistakeMode = mistakeMode;
+            correctCount = 0;
+            comboCount = 0;
+            maxCombo = 0;
+            
+            if (!isMistakeMode) {
+                initQuestions();
+                mistakeBank = [];
+                currentScore = 0;
+                currentTime = 60;
+                document.getElementById('scoreLabel').innerText = "分數";
+                document.getElementById('timeLabel').innerText = "時間";
+                document.getElementById('headerSubtitle').innerText = currentCategoryConfig.name + " 極限挑戰";
+            } else {
+                fullQuestionBank = [...mistakeBank];
+                shuffleArray(fullQuestionBank);
+                mistakeBank = []; 
+                currentScore = 0; 
+                currentTime = Math.max(20, fullQuestionBank.length * 4); 
+                document.getElementById('scoreLabel').innerText = "完成率";
+                document.getElementById('timeLabel').innerText = "倒數";
+                document.getElementById('headerSubtitle').innerText = "🔥 錯題復仇戰";
+            }
+
+            currentQuestionIndex = 0;
+            answeredCount = 0;
+            isGameActive = true;
+            
+            updateScoreDisplay();
+            document.getElementById('timerDisplay').innerText = currentTime;
+            
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('endScreen').classList.add('hidden');
+            document.getElementById('btnMistakeChallenge').classList.add('hidden');
+            document.getElementById('comboContainer').classList.add('hidden');
+            document.getElementById('highScoreView').classList.add('hidden');
+            document.getElementById('normalEndView').classList.remove('hidden');
+            document.getElementById('gachaSection').classList.add('hidden');
+            
+            renderQuestion();
+            
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                currentTime--;
+                document.getElementById('timerDisplay').innerText = currentTime;
+                
+                if (currentTime <= 10) {
+                    document.getElementById('timerDisplay').classList.add('text-red-600', 'animate-pulse');
+                } else {
+                    document.getElementById('timerDisplay').classList.remove('text-red-600', 'animate-pulse');
+                }
+
+                if (currentTime <= 0) {
+                    endGame();
+                }
+            }, 1000);
+        }
+
+        function startMistakeChallenge() {
+            startGame(true);
+        }
+
+        function updateScoreDisplay() {
+            if (isMistakeMode) {
+                const total = fullQuestionBank.length;
+                const pct = total === 0 ? 0 : Math.round((correctCount / total) * 100);
+                document.getElementById('scoreDisplay').innerText = pct + "%";
+            } else {
+                document.getElementById('scoreDisplay').innerText = currentScore;
+            }
+        }
+
+        function renderQuestion() {
+            if (currentQuestionIndex >= fullQuestionBank.length) {
+                if (isMistakeMode) {
+                    endGame();
+                    return;
+                } else {
+                    shuffleArray(fullQuestionBank);
+                    currentQuestionIndex = 0;
+                }
+            }
+
+            const q = fullQuestionBank[currentQuestionIndex];
+            const card = document.getElementById('questionCard');
+            
+            card.classList.remove('animate-pop');
+            void card.offsetWidth;
+            card.classList.add('animate-pop');
+
+            let displayText = q.word.replace(/「(.*?)」/g, '<span class="text-blue-600">「$1」</span>');
+            document.getElementById('questionText').innerHTML = displayText;
+            
+            document.getElementById('qCount').innerText = answeredCount + 1;
+            
+            const feedback = document.getElementById('resultFeedback');
+            feedback.style.opacity = '0';
+        }
+
+        function triggerComboEffect() {
+            const container = document.getElementById('comboContainer');
+            const display = document.getElementById('comboCountDisplay');
+            
+            if (comboCount >= 2) {
+                display.innerText = "x" + comboCount;
+                container.classList.remove('hidden');
+                
+                // Re-trigger animation
+                container.classList.remove('animate-combo');
+                void container.offsetWidth;
+                container.classList.add('animate-combo');
+                
+                // Extra visual fun for high combo
+                if (comboCount % 5 === 0) triggerConfetti();
+            } else {
+                container.classList.add('hidden');
+            }
+        }
+
+        function checkAnswer(userAnswerKey) {
+            if (!isGameActive) return;
+
+            const q = fullQuestionBank[currentQuestionIndex];
+            const feedback = document.getElementById('resultFeedback');
+            const card = document.getElementById('questionCard');
+
+            if (userAnswerKey === q.answer) {
+                // Correct
+                comboCount++;
+                if (comboCount > maxCombo) maxCombo = comboCount;
+                
+                if (!isMistakeMode) {
+                    let bonus = Math.min(comboCount, 5); 
+                    currentScore += (10 + bonus);
+                }
+                correctCount++;
+                answeredCount++;
+                updateScoreDisplay();
+                playSound('correct');
+                triggerComboEffect();
+                
+                feedback.innerHTML = `<span class="text-green-500">⭕ ${q.word} (${q.label})</span>`;
+                feedback.style.opacity = '1';
+                
+                card.classList.add('border-green-400');
+                setTimeout(() => card.classList.remove('border-green-400'), 200);
+
+            } else {
+                // Wrong
+                comboCount = 0; 
+                document.getElementById('comboContainer').classList.add('hidden'); 
+                
+                if (!isMistakeMode) {
+                    currentScore = Math.max(0, currentScore - 5);
+                }
+                answeredCount++; 
+                updateScoreDisplay();
+                playSound('wrong');
+                
+                if (!mistakeBank.some(item => item.word === q.word)) {
+                    mistakeBank.push(q);
+                }
+
+                feedback.innerHTML = `<span class="text-red-500">❌ 是 ${q.label} 才對！</span>`;
+                feedback.style.opacity = '1';
+                
+                card.classList.add('animate-shake', 'border-red-400');
+                setTimeout(() => card.classList.remove('animate-shake', 'border-red-400'), 400);
+            }
+
+            currentQuestionIndex++;
+            setTimeout(() => {
+                if (isGameActive) renderQuestion();
+            }, 500);
+        }
+
+        function endGame() {
+            isGameActive = false;
+            clearInterval(timerInterval);
+            document.getElementById('comboContainer').classList.add('hidden');
+            
+            document.getElementById('endScreen').classList.remove('hidden');
+            
+            const feedbackMsg = document.getElementById('feedbackMessage');
+            const endEmoji = document.getElementById('endEmoji');
+            const endTitle = document.getElementById('endTitle');
+            const btnMistake = document.getElementById('btnMistakeChallenge');
+            const mistakeCountSpan = document.getElementById('mistakeCount');
+            const finalScoreEl = document.getElementById('finalScore');
+            const maxComboDisplay = document.getElementById('maxComboDisplay'); // Note: not used in updated DOM, but kept for logic safety
+            const maxComboValueEnd = document.getElementById('maxComboValueEnd');
+            const highScoreView = document.getElementById('highScoreView');
+            const normalEndView = document.getElementById('normalEndView');
+            const gachaSection = document.getElementById('gachaSection');
+            const rankBadge = document.getElementById('rankBadge');
+
+            // Reset views
+            highScoreView.classList.add('hidden');
+            normalEndView.classList.remove('hidden');
+            gachaSection.classList.add('hidden');
+
+            // Determine Rank
+            let rankText = "注音練習生";
+            if (!isMistakeMode) {
+                if (currentScore > 600) { rankText = "👑 絕世音感王"; endEmoji.innerText="🤩"; }
+                else if (currentScore > 400) { rankText = "🔥 拼音高手"; endEmoji.innerText="😎"; }
+                else if (currentScore > 200) { rankText = "🐣 練習小達人"; endEmoji.innerText="😄"; }
+                else { rankText = "🌱 注音小菜鳥"; endEmoji.innerText="😐"; }
+            } else {
+                rankText = "復仇者";
+            }
+            rankBadge.innerText = rankText;
+
+            // Show max combo stat
+            if (maxComboValueEnd) maxComboValueEnd.innerText = maxCombo;
+
+            if (isMistakeMode) {
+                const total = fullQuestionBank.length;
+                const pct = total === 0 ? 0 : Math.round((correctCount / total) * 100);
+                finalScoreEl.innerText = pct + "%";
+                endTitle.innerText = "復仇戰結束！";
+
+                if (mistakeBank.length === 0) {
+                     feedbackMsg.innerHTML = "<strong>太完美了！</strong><br>所有錯題都已經被你消滅了！恭喜！";
+                     triggerConfetti();
+                } else {
+                     feedbackMsg.innerHTML = `<strong>別氣餒！</strong><br>還有 ${mistakeBank.length} 題比較頑強，要不要再挑戰一次？`;
+                }
+                
+                if (mistakeBank.length > 0) {
+                    btnMistake.classList.remove('hidden');
+                    mistakeCountSpan.innerText = mistakeBank.length;
+                } else {
+                    btnMistake.classList.add('hidden');
+                }
+                
+                // 傳送成績到 Google Sheets (錯題模式)
+                sendToGoogleSheets(currentStudentName, currentCategoryConfig.name, pct + "%", maxCombo, "錯題模式");
+
+            } else {
+                finalScoreEl.innerText = currentScore;
+                
+                // 傳送成績到 Google Sheets (一般模式)
+                sendToGoogleSheets(currentStudentName, currentCategoryConfig.name, currentScore, maxCombo, "一般模式");
+                
+                // Check Gacha Eligibility (e.g., > 200 pts)
+                if (currentScore >= 200) {
+                    gachaSection.classList.remove('hidden');
+                    document.getElementById('gachaClosed').classList.remove('hidden');
+                    document.getElementById('gachaOpen').classList.add('hidden');
+                }
+
+                if (isHighScore(currentCategoryKey, currentScore)) {
+                    normalEndView.classList.add('hidden');
+                    highScoreView.classList.remove('hidden');
+                    document.getElementById('highScoreValue').innerText = currentScore;
+                    document.getElementById('playerNameInput').value = currentStudentName !== "無名英雄" ? currentStudentName : ''; 
+                    playSound('correct');
+                    triggerConfetti();
+                } else {
+                    endTitle.innerText = "時間到！";
+                    if (mistakeBank.length === 0 && currentScore > 0) {
+                        feedbackMsg.innerHTML = "<strong>神級表現！</strong><br>完全沒有失誤，您的發音辨識能力無懈可擊！";
+                    } else if (mistakeBank.length > 0) {
+                        feedbackMsg.innerHTML = `<strong>發現弱點！</strong><br>雖然分數不錯，但有 ${mistakeBank.length} 個字容易搞混。<br>快點擊下方紅色按鈕進行特訓！`;
+                    } else {
+                        feedbackMsg.innerHTML = "<strong>熱身結束？</strong><br>分數有點低喔，是不是還沒準備好？";
+                    }
+
+                    if (mistakeBank.length > 0) {
+                        btnMistake.classList.remove('hidden');
+                        mistakeCountSpan.innerText = mistakeBank.length;
+                    } else {
+                        btnMistake.classList.add('hidden');
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
